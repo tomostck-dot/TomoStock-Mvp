@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TomoStock</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    margin: 0;
+    padding: 24px 16px;
+  }
+  .shell { max-width: 420px; margin: 0 auto; }
+  .card {
+    background: #111827;
+    border-radius: 16px;
+    padding: 28px 24px;
+  }
+  .brand { font-size: 24px; font-weight: 800; color: #22c55e; }
+  .brandSub { color: #94a3b8; font-size: 14px; margin-top: 4px; }
+  label { display: block; font-size: 13px; color: #cbd5e1; margin-top: 16px; margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 12px 14px; border-radius: 8px;
+    border: 1px solid #334155; background: #1e293b; color: white;
+    font-size: 15px; box-sizing: border-box;
+  }
+  button {
+    width: 100%; margin-top: 22px; padding: 13px; border-radius: 8px;
+    border: none; background: #22c55e; color: white; font-weight: 700;
+    font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; }
+  .err {
+    background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4);
+    color: #fca5a5; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-top: 12px;
+  }
+  .ok {
+    background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4);
+    color: #86efac; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px;
+  }
+  .section { background: #111827; border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  .sectionTitle { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row input { flex: 1; margin-top: 0; }
+  .smallBtn { width: auto; padding: 0 16px; margin-top: 0; }
+  .productRow {
+    display: flex; align-items: center; gap: 10px;
+    background: #1e293b; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+  }
+  .productName { font-weight: 600; font-size: 14px; }
+  .productMeta { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  .qtdInput { width: 56px; padding: 8px 6px; text-align: center; }
+  .sellBtn { width: auto; padding: 8px 12px; margin-top: 0; font-size: 13px; }
+  .logoutBtn {
+    padding: 8px 14px; border-radius: 8px; border: 1px solid #334155;
+    background: transparent; color: #cbd5e1; font-size: 13px; cursor: pointer; width: auto;
+  }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .muted { color: #64748b; font-size: 13px; }
+  #app-main { display: none; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div id="login-screen" class="card">
+    <div class="brand">TomoStock</div>
+    <div class="brandSub">Gestão simples para o teu negócio</div>
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="teu@email.com">
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" placeholder="••••••••">
+    <div id="login-error"></div>
+    <button id="btn-login">Entrar</button>
+  </div>
+
+  <div id="app-main">
+    <div class="header">
+      <div>
+        <div class="brand" style="font-size:20px;">TomoStock</div>
+        <div class="muted" id="user-label"></div>
+      </div>
+      <button class="logoutBtn" id="btn-logout">Sair</button>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Adicionar produto</div>
+      <div class="row">
+        <input id="novo-nome" placeholder="Nome do produto">
+        <input id="novo-preco" type="number" step="0.01" placeholder="Preço">
+        <input id="novo-stock" type="number" placeholder="Stock">
+        <button class="smallBtn" id="btn-add">Adicionar</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Produtos</div>
+      <div id="venda-msg"></div>
+      <div id="lista-produtos"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = "https://golwreutojirxmkzfwds.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_75pOoTHpRycyhpPX_A3Hyg_6reIG_-8";
+
+let session = null;
+let userRow = null;
+let produtos = [];
+
+function authHeaders(token) {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: "Bearer " + (token || SUPABASE_ANON_KEY),
+    "Content-Type": "application/json"
+  };
+}
+
+document.getElementById("btn-login").addEventListener("click", async () => {
+  const email = document.getElementById("email").value.trim();
+  const senha = document.getElementById("senha").value;
+  const errBox = document.getElementById("login-error");
+  errBox.innerHTML = "";
+
+  if (!email || !senha) return;
+
+  try {
+    const res = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=password", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email, password: senha })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error_description || data.msg || "Falha no login");
+    }
+    session = data;
+    await afterLogin();
+  } catch (err) {
+    errBox.innerHTML = '<div class="err">' + (err.message || "Erro ao entrar") + '</div>';
+  }
+});
+
+document.getElementById("btn-logout").addEventListener("click", () => {
+  session = null;
+  userRow = null;
+  produtos = [];
+  document.getElementById("app-main").style.display = "none";
+  document.getElementById("login-screen").style.display = "block";
+});
+
+async function afterLogin() {
+  const token = session.access_token;
+  const uid = session.user.id;
+
+  const uRes = await fetch(SUPABASE_URL + "/rest/v1/users?id=eq." + uid + "&select=*", {
+    headers: authHeaders(token)
+  });
+  const uData = await uRes.json();
+  userRow = uData[0];
+
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app-main").style.display = "block";
+  document.getElementById("user-label").textContent = userRow ? (userRow.nome || userRow.email) : "";
+
+  if (userRow && userRow.empresa_id) {
+    await loadProdutos();
+  } else {
+    document.getElementById("lista-produtos").innerHTML =
+      '<div class="err">Utilizador sem empresa associada.</div>';
+  }
+}
+
+async function loadProdutos() {
+  const token = session.access_token;
+  const pRes = await fetch(
+    SUPABASE_URL + "/rest/v1/produtos?empresa_id=eq." + userRow.empresa_id + "&select=*&order=nome.asc",
+    { headers: authHeaders(token) }
+  );
+  produtos = await pRes.json();
+  renderProdutos();
+}
+
+function renderProdutos() {
+  const container = document.getElementById("lista-produtos");
+  if (!produtos.length) {
+    container.innerHTML = '<div class="muted">Ainda não há produtos.</div>';
+    return;
+  }
+  container.innerHTML = produtos.map(p => `
+    <div class="productRow">
+      <div style="flex:2;">
+        <div class="productName">${p.nome}</div>
+        <div class="productMeta">${Number(p.preco).toFixed(2)} MZN · stock: ${p.stock}</div>
+      </div>
+      <input class="qtdInput" type="number" min="1" max="${p.stock}" placeholder="qtd" id="qtd-${p.id}">
+      <button class="sellBtn" onclick="venderProduto('${p.id}')" ${p.stock <= 0 ? "disabled" : ""}>
+        ${p.stock <= 0 ? "Sem stock" : "Vender"}
+      </button>
+    </div>
+  `).join("");
+}
+
+document.getElementById("btn-add").addEventListener("click", async () => {
+  const nome = document.getElementById("novo-nome").value.trim();
+  const preco = document.getElementById("novo-preco").value;
+  const stock = document.getElementById("novo-stock").value || "0";
+  if (!nome || !preco) return;
+
+  const token = session.access_token;
+  const res = await fetch(SUPABASE_URL + "/rest/v1/produtos", {
+    method: "POST",
+    headers: Object.assign({}, authHeaders(token), { Prefer: "return=representation" }),
+    body: JSON.stringify({
+      empresa_id: userRow.empresa_id,
+      nome,
+      preco: parseFloat(preco),
+      stock: parseInt(stock, 10)
+    })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    produtos.push(data[0]);
+    produtos.sort((a, b) => a.nome.localeCompare(b.nome));
+    renderProdutos();
+    document.getElementById("novo-nome").value = "";
+    document.getElementById("novo-preco").value = "";
+    document.getElementById("novo-stock").value = "";
+  }
+});
+
+async function venderProduto(id) {
+  const produto = produtos.find(p => p.id === id);
+  const qtdInput = document.getElementById("qtd-" + id);
+  const qtd = parseInt(qtdInput.value || "1", 10);
+  const msgBox = document.getElementById("venda-msg");
+
+  if (!qtd || qtd <= 0) return;
+  if (qtd > produto.stock) {
+    msgBox.innerHTML = '<div class="err">Stock insuficiente para ' + produto.nome + '.</div>';
+    return;
+  }
+
+  const token = session.access_token;
+  const total = qtd * produto.preco;
+
+  const vendaRes = await fetch(SUPABASE_URL + "/rest/v1/vendas", {
+    method: "POST",
+    headers: Object.assign({}, authHeaders(token), { Prefer: "return=representation" }),
+    body: JSON.stringify({
+      empresa_id: userRow.empresa_id,
+      user_id: userRow.id,
+      itens: [{ produto_id: produto.id, nome: produto.nome, qtd, preco: produto.preco }],
+      total
+    })
+  });
+
+  if (!vendaRes.ok) {
+    const err = await vendaRes.json();
+    msgBox.innerHTML = '<div class="err">' + (err.message || "Erro ao registar venda.") + '</div>';
+    return;
+  }
+
+  const novoStock = produto.stock - qtd;
+  const updRes = await fetch(SUPABASE_URL + "/rest/v1/produtos?id=eq." + produto.id, {
+    method: "PATCH",
+    headers: Object.assign({}, authHeaders(token), { Prefer: "return=representation" }),
+    body: JSON.stringify({ stock: novoStock })
+  });
+  const updData = await updRes.json();
+  if (updRes.ok) {
+    produto.stock = updData[0].stock;
+    renderProdutos();
+    msgBox.innerHTML = '<div class="ok">Venda de ' + qtd + 'x ' + produto.nome + ' registada — ' + total.toFixed(2) + ' MZN</div>';
+  }
+}
+</script>
+</body>
+</html>
